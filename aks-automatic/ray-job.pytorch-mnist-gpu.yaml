@@ -11,7 +11,7 @@ spec:
       - torchvision
     working_dir: "https://github.com/ray-project/kuberay/archive/master.zip"
     env_vars:
-      NUM_WORKERS: "2"
+      NUM_WORKERS: "1"
       CPUS_PER_WORKER: "2"
   
   # rayClusterSpec specifies the RayCluster instance to be created by the RayJob controller.
