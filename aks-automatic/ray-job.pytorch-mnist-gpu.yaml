@@ -3,7 +3,7 @@ kind: RayJob
 metadata:
   name: rayjob-pytorch-mnist
 spec:
-  shutdownAfterJobFinishes: false
+  shutdownAfterJobFinishes: true
   entrypoint: python ray-operator/config/samples/pytorch-mnist/ray_train_pytorch_mnist.py
   runtimeEnvYAML: |
     pip:
