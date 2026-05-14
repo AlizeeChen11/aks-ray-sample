@@ -27,4 +27,12 @@ provider "azurerm" {
     }
   }
   subscription_id = var.subscription_id
+  use_cli         = true
+  use_msi         = false
+}
+
+provider "azapi" {
+  subscription_id = var.subscription_id
+  use_cli         = true
+  use_msi         = false
 }

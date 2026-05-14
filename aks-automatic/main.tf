@@ -28,7 +28,7 @@ resource "azapi_resource" "aks_auto" {
   body = jsonencode({
 
     properties = {
-      kubernetesVersion = "1.31"
+      kubernetesVersion = "1.33"
       nodeResourceGroup = "MC-aks-${var.project_prefix}-${random_string.suffix.result}"
       agentPoolProfiles = [
         {
@@ -80,18 +80,22 @@ resource "null_resource" "wait_for_aks" {
   depends_on = [azapi_resource.aks_auto]
 
   provisioner "local-exec" {
+    interpreter = ["PowerShell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
     command = <<EOT
-      max_retries=10
-      retries=0
-      while [ "$(az aks show --resource-group ${azurerm_resource_group.rg.name} --name ${azapi_resource.aks_auto.name} --query "provisioningState" -o tsv)" != "Succeeded" ]; do
-        if [ $retries -ge $max_retries ]; then
-          echo "Max retries exceeded. Exiting..."
+      $maxRetries = 20
+      $retries = 0
+      while ($true) {
+        $state = az aks show --resource-group "${azurerm_resource_group.rg.name}" --name "${azapi_resource.aks_auto.name}" --query "provisioningState" -o tsv
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        if ($state -eq "Succeeded") { exit 0 }
+        if ($retries -ge $maxRetries) {
+          Write-Error "Max retries exceeded. Exiting..."
           exit 1
-        fi
-        echo "Waiting for AKS cluster to be fully provisioned... (Attempt: $((retries+1)))"
-        retries=$((retries+1))
-        sleep 30
-      done
+        }
+        Write-Output "Waiting for AKS cluster to be fully provisioned... (Attempt: $($retries + 1))"
+        $retries += 1
+        Start-Sleep -Seconds 30
+      }
     EOT
   }
 }
@@ -117,7 +121,7 @@ resource "azurerm_kubernetes_cluster_node_pool" "workload" {
   name                  = "ray"
   kubernetes_cluster_id = azapi_resource.aks_auto.id
   vm_size               = var.ray_node_pool_vm_size
-  node_count            = 4
+  node_count            = 2
   os_type               = "Linux"
   os_sku                = "AzureLinux" 
   os_disk_type          = "Ephemeral"

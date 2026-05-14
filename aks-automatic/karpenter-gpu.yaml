@@ -1,0 +1,57 @@
+apiVersion: karpenter.azure.com/v1beta1
+kind: AKSNodeClass
+metadata:
+  name: gpu
+spec:
+  imageFamily: AzureLinux        # or Ubuntu2204
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: ray
+spec:
+  # ----- Pod selection -----
+  template:
+    metadata:
+      labels:
+        accelerator: nvidia
+        workload: gpu
+    spec:
+      nodeClassRef:
+        group: karpenter.azure.com
+        kind: AKSNodeClass
+        name: gpu
+
+      # Taint so only GPU-aware pods land here.
+      # Pods must tolerate this taint to be scheduled.
+      taints:
+        - key: nvidia.com/gpu
+          value: "true"
+          effect: NoSchedule
+
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+        # Optional: limit GPU count per node, region/zone, etc.
+        # - key: karpenter.azure.com/sku-gpu-count
+        #   operator: In
+        #   values: ["1","2","4","8"]
+
+  # ----- Cluster-wide cap (prevents runaway scale-up) -----
+  limits:
+    cpu: "40"
+    memory: "320Gi"
+    nvidia.com/gpu: "1"
+
+  # ----- Scale-down behavior -----
+  disruption:
+    consolidationPolicy: WhenEmpty   # remove the node when it’s empty
+    consolidateAfter: 5m             # wait 5 min idle before removing
+    # expireAfter: 168h              # optional: force-recycle nodes weekly

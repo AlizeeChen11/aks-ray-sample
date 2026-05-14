@@ -24,20 +24,26 @@ if ! command -v terraform &> /dev/null; then
     exit 1
 fi
 
+
 # Initialize Terraform
-echo "Initializing Terraform..."
-terraform init
+# echo "Initializing Terraform..."
+# terraform init
 
-# Create a Terraform plan
-terraform plan -out main.tfplan
+# # Create a Terraform plan
+# terraform plan -out main.tfplan
 
-# Apply the Terraform plan
-terraform apply main.tfplan
+# # Apply the Terraform plan
+# terraform apply main.tfplan
+
 
 # Retrieve the Terraform outputs and store in variables
-resource_group_name=$(terraform output -raw resource_group_name)
-system_node_pool_name=$(terraform output -raw system_node_pool_name)
-aks_cluster_name=$(terraform output -raw kubernetes_cluster_name)
+# resource_group_name=$(terraform output -raw resource_group_name)
+# system_node_pool_name=$(terraform output -raw system_node_pool_name)
+# aks_cluster_name=$(terraform output -raw kubernetes_cluster_name)
+
+resource_group_name=rg-raydemo-qi122p
+system_node_pool_name=aks-systempool-28683617
+aks_cluster_name=aks-raydemo-qi122p
 
 # Get AKS credentials for the cluster
 az aks get-credentials \
@@ -60,17 +66,9 @@ kubectl get nodes
 #       do this when verifying the installation of Helm.
 helm version
 
-# Add FluentBit Helm repository
-helm repo add fluent https://fluent.github.io/helm-charts
-helm repo update
-
-# Install FluentBit using Helm
-helm upgrade --install fluent-bit fluent/fluent-bit
-
-if [ $? -ne 0 ]; then
-    echo "Failed to install FluentBit. Please check the logs for more details."
-    exit 1
-fi
+# AKS Automatic enforces baseline pod security and blocks Fluent Bit's hostPath
+# mounts. Use AKS managed monitoring instead of deploying Fluent Bit here.
+echo "Skipping Fluent Bit install on AKS Automatic; hostPath volumes are blocked by baseline policy."
 
 # Add the KubeRay Helm repository
 helm repo add kuberay https://ray-project.github.io/kuberay-helm/
@@ -159,13 +157,19 @@ spec:
       targetLabel: ray_io_cluster
 EOF
 
+# Install NVIDIA device plugin so GPU nodes advertise nvidia.com/gpu.
+curl -fL -o nvidia-device-plugin.yml \
+  https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.17.1/deployments/static/nvidia-device-plugin.yml
+
+kubectl apply -f karpenter-gpu.yaml
+kubectl apply -f nvidia-device-plugin.yml
 
 # Download the PyTorch MNIST job YAML file
 curl -LO https://raw.githubusercontent.com/ray-project/kuberay/master/ray-operator/config/samples/pytorch-mnist/ray-job.pytorch-mnist.yaml
 
 # Train a PyTorch Model on Fashion MNIST
-kubectl apply -n $kuberay_namespace -f ray-job.pytorch-mnist.yaml
-
+# kubectl apply -n $kuberay_namespace -f ray-job.pytorch-mnist.yaml
+kubectl apply -n $kuberay_namespace -f ray-job.pytorch-mnist-gpu.yaml
 # Output the pods in the kuberay namespace
 kubectl get pods -n $kuberay_namespace
 
