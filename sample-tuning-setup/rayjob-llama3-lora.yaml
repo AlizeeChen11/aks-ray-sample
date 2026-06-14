@@ -1,0 +1,126 @@
+apiVersion: ray.io/v1
+kind: RayJob
+metadata:
+  name: rayjob-llama3-lora
+spec:
+  shutdownAfterJobFinishes: true
+  entrypoint: >
+    python /workspace/train_llama3_lora.py
+    --num_workers=1
+    --cpus_per_worker=10
+    --max_steps=200
+    --max_length=1024
+    --output_dir=/results/llama3-lora
+  runtimeEnvYAML: |
+    pip:
+      - accelerate>=0.33.0
+      - bitsandbytes>=0.43.0
+      - datasets>=2.20.0
+      - peft==0.12.0
+      - pandas>=2.2.0
+      - sentencepiece>=0.2.0
+      - transformers==4.44.2
+
+  rayClusterSpec:
+    rayVersion: "2.52.0"
+    headGroupSpec:
+      serviceType: ClusterIP
+      rayStartParams:
+        dashboard-host: "0.0.0.0"
+        block: "true"
+      template:
+        spec:
+          containers:
+          - name: ray-head
+            image: rayproject/ray-ml:nightly-py310-gpu
+            imagePullPolicy: IfNotPresent
+            resources:
+              requests:
+                cpu: "4"
+                memory: "16Gi"
+              limits:
+                cpu: "4"
+                memory: "16Gi"
+            env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: HF_TOKEN
+            - name: RAY_OBJECT_STORE_MEMORY
+              value: "8G"
+            volumeMounts:
+            - name: llama3-train-script
+              mountPath: /workspace/train_llama3_lora.py
+              subPath: train_llama3_lora.py
+            - name: results
+              mountPath: /results
+          volumes:
+          - name: llama3-train-script
+            configMap:
+              name: llama3-train-script
+          - name: results
+            emptyDir: {}
+
+    workerGroupSpecs:
+    - replicas: 1
+      minReplicas: 1
+      maxReplicas: 1
+      groupName: gpu-workers
+      rayStartParams:
+        block: "true"
+        num-gpus: "1"
+      template:
+        spec:
+          tolerations:
+          - key: nvidia.com/gpu
+            operator: Equal
+            value: "true"
+            effect: NoSchedule
+          containers:
+          - name: ray-worker
+            image: rayproject/ray-ml:nightly-py310-gpu
+            imagePullPolicy: IfNotPresent
+            resources:
+              requests:
+                cpu: "12"
+                memory: "96Gi"
+                nvidia.com/gpu: "1"
+              limits:
+                cpu: "12"
+                memory: "96Gi"
+                nvidia.com/gpu: "1"
+            env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: HF_TOKEN
+            - name: RAY_OBJECT_STORE_MEMORY
+              value: "16G"
+            volumeMounts:
+            - name: llama3-train-script
+              mountPath: /workspace/train_llama3_lora.py
+              subPath: train_llama3_lora.py
+            - name: results
+              mountPath: /results
+          volumes:
+          - name: llama3-train-script
+            configMap:
+              name: llama3-train-script
+          - name: results
+            emptyDir: {}
+          initContainers:
+          - name: wait-for-ray-head
+            image: busybox:1.28
+            resources:
+              requests:
+                cpu: "50m"
+                memory: "64Mi"
+              limits:
+                cpu: "100m"
+                memory: "128Mi"
+            command:
+            - sh
+            - -c
+            - until nslookup $RAY_IP.$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace).svc.cluster.local; do echo waiting for ray head; sleep 2; done
